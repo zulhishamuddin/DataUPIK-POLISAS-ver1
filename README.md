@@ -1,5 +1,51 @@
 # DataUPIK POLISAS — Dashboard
 
+---
+
+## 🔧 Penyelesaian Masalah (Troubleshooting)
+
+### ❌ Masalah: Login Admin Gagal / "Ralat sambungan Supabase"
+
+**Punca:** ANON KEY dalam `js/supabase-config.js` menggunakan format baru Supabase (`sb_publishable_...`) yang **tidak diterima** oleh supabase-js v2.
+
+**Penyelesaian:**
+1. Pergi ke [https://supabase.com/dashboard](https://supabase.com/dashboard)
+2. Pilih projek **xwnynfvhtqjxhpkllvxa**
+3. Klik **Settings → API**
+4. Di bawah **"Project API keys"**, salin nilai **"anon / public"**
+5. Key yang betul bermula dengan: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+6. Buka `dashboard/js/supabase-config.js` dan gantikan baris:
+   ```
+   const SUPABASE_ANON_KEY = 'sb_publishable_...';
+   ```
+   dengan:
+   ```
+   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'; // ← key anda
+   ```
+
+> ℹ️ Halaman login kini akan memaparkan mesej ralat yang tepat jika sambungan Supabase gagal.
+
+### ❌ Masalah: Logo UPIK tidak muncul
+
+**Punca:** Fail logo belum disalin ke folder `assets/`.
+
+**Penyelesaian:**
+1. Salin fail logo UPIK POLISAS ke: `dashboard/assets/logo-upik.jpg`
+2. Jika nama fail berbeza, ubah dalam `dashboard/index.html` baris: `src="assets/logo-upik.jpg"`
+3. Jika logo masih tidak muncul apabila buka terus dari `file://`, ini **normal** — logo akan muncul apabila dihost di GitHub Pages atau pelayan web.
+
+> ℹ️ Jika logo gagal dimuatkan, sistem akan memaparkan teks **"🔬 UPIK"** sebagai gantian.
+
+### ❌ Masalah: Jadual/Rekod tidak dimuatkan
+
+**Semak perkara berikut:**
+1. **ANON KEY** — Ikut langkah di atas
+2. **RLS Policies** — Pastikan polisi RLS sudah dikonfigurasi (lihat bahagian Setup di bawah)
+3. **Nama jadual** — Nama jadual dalam `supabase-config.js` mesti **tepat sama** dengan nama dalam Supabase (termasuk huruf besar/kecil dan spasi)
+4. **Column `status`** — Pastikan column `status` sudah ditambah (SQL di bahagian Setup)
+
+---
+
 Sistem Pengurusan Data Penyelidikan, Inovasi & Komersial  
 **Politeknik Sultan Haji Ahmad Shah (POLISAS)**
 

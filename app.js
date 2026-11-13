@@ -226,23 +226,31 @@ function initPage(activeMenu) {
   const user = requireAuth();
   if (!user) return null;
   renderNavUser();
+  // Active menu + sidebar user are set after sidebarHTML() is injected — call markActive() separately
+  window.__activeMenu = activeMenu;
+  return user;
+}
 
-  // Mark active sidebar item
+// Call this after sidebarHTML() is injected into the DOM
+function markSidebarActive() {
+  const user = getSession();
   document.querySelectorAll('.nav-item').forEach(el => {
-    if (el.dataset.menu === activeMenu) el.classList.add('active');
+    if (el.dataset.menu === window.__activeMenu) el.classList.add('active');
     else el.classList.remove('active');
   });
-
-  // Sidebar footer user
   const sf = document.getElementById('sidebar-user-info');
-  if (sf) {
-    sf.innerHTML = `<strong>${user.nama}</strong><br>
+  if (sf && user) {
+    sf.innerHTML = `<strong>${esc(user.nama)}</strong><br>
       <span class="badge ${user.role === 'admin' ? 'badge-admin' : 'badge-pensyarah'}" style="margin-top:4px">
         ${user.role === 'admin' ? 'Admin' : 'Pensyarah'}
       </span>
-      ${user.jabatan ? `<br><small>${user.jabatan}</small>` : ''}`;
+      ${user.jabatan ? `<br><small>${esc(user.jabatan)}</small>` : ''}`;
   }
-  return user;
+}
+
+// ── Default applyFilters stub (overridden per page) ──
+if (typeof applyFilters === 'undefined') {
+  window.applyFilters = function() {};
 }
 
 // ── Render sidebar HTML (reusable) ──
@@ -253,8 +261,7 @@ function sidebarHTML(active) {
   <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <img src="assets/logo-upik.jpg" alt="Logo UPIK" class="sidebar-logo">
-      <div class="sidebar-brand">DataUPIK<br>POLISAS</div>
+      <div class="sidebar-brand">🔬 DataUPIK<br><small>POLISAS</small></div>
     </div>
     <nav class="sidebar-nav">
       <div class="nav-section-label">Utama</div>

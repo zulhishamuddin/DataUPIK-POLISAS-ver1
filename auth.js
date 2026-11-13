@@ -49,7 +49,14 @@ async function loginAdmin(loginId, password) {
     .eq('Password', password)
     .single();
 
-  if (error || !data) return { success: false, message: 'Login ID atau Password salah.' };
+  if (error) {
+    // Surface the real error so we can diagnose connection/key problems
+    const msg = error.code === 'PGRST116'
+      ? 'Login ID atau Password salah.'
+      : '⚠️ Ralat sambungan Supabase: ' + (error.message || error.code);
+    return { success: false, message: msg };
+  }
+  if (!data) return { success: false, message: 'Login ID atau Password salah.' };
 
   saveSession({ role: 'admin', nama: data['Nama'], id: data['ID'] });
   return { success: true };
@@ -64,7 +71,13 @@ async function loginPensyarah(loginId, password) {
     .eq('Password', password)
     .single();
 
-  if (error || !data) return { success: false, message: 'Login ID atau Password salah.' };
+  if (error) {
+    const msg = error.code === 'PGRST116'
+      ? 'Login ID atau Password salah.'
+      : '⚠️ Ralat sambungan Supabase: ' + (error.message || error.code);
+    return { success: false, message: msg };
+  }
+  if (!data) return { success: false, message: 'Login ID atau Password salah.' };
 
   saveSession({
     role: 'pensyarah',

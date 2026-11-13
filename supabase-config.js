@@ -1,6 +1,6 @@
 // Supabase Configuration — DataUPIK POLISAS
-const SUPABASE_URL = 'https://xwnynfvhtqjxhpkllvxa.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_Uu6JtyBd7mC8LaBRtl04QA_O7LOzt9Q';
+const SUPABASE_URL  = 'https://xwnynfvhtqjxhpkllvxa.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh3bnluZnZodHFqeGhwa2xsdnhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM5NDQ4NDIsImV4cCI6MjEwOTUyMDg0Mn0.uLGHO2ROKRmb7SSV-6pWTUnoDQmg47Y8gh4P5xaWuvI';
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 

@@ -105,7 +105,7 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 <script src="js/supabase-config.js"></script>
@@ -115,13 +115,13 @@
 const user = initPage('dashboard');
 if (user) {
   document.getElementById('sidebar-placeholder').innerHTML = sidebarHTML('dashboard');
+  markSidebarActive();
   document.getElementById('search-bar-placeholder').innerHTML = searchBarHTML('semua');
   populateYearFilter('filter-year');
   populateJabatanFilter('filter-jabatan');
   populateSdgFilter('filter-sdg');
   populateYearFilter('dash-filter-year');
   populateJabatanFilter('dash-filter-jabatan');
-  // Hide export for pensyarah
   if (user.role !== 'admin') document.getElementById('btn-export').style.display = 'none';
   loadStats();
   loadRecentActivity();
@@ -131,21 +131,21 @@ if (user) {
 // ── Load stat cards ──
 async function loadStats() {
   const tables = [
-    { key: 'penyelidikan', label: 'Penyelidikan', icon: '🔬', cls: 'blue' },
-    { key: 'inovasi',      label: 'Inovasi',       icon: '💡', cls: 'green' },
-    { key: 'ip',           label: 'IP Berdaftar',  icon: '🏛️', cls: 'purple' },
-    { key: 'geran',        label: 'Geran',          icon: '💰', cls: 'orange' },
-    { key: 'aset',         label: 'Aset Tak Ketara',icon: '🧾', cls: 'teal' },
+    { key: 'penyelidikan', label: 'Penyelidikan',    icon: '🔬', cls: 'blue',   yearCol: 'Year',  deptCol: 'Department' },
+    { key: 'inovasi',      label: 'Inovasi',          icon: '💡', cls: 'green',  yearCol: 'Year',  deptCol: 'Department' },
+    { key: 'ip',           label: 'IP Berdaftar',     icon: '🏛️', cls: 'purple', yearCol: 'Year',  deptCol: 'Department' },
+    { key: 'geran',        label: 'Geran',             icon: '💰', cls: 'orange', yearCol: 'Year',  deptCol: 'Department' },
+    { key: 'aset',         label: 'Aset Tak Ketara',  icon: '🧾', cls: 'teal',   yearCol: 'Tahun', deptCol: 'Lokasi' },
   ];
-  const year = document.getElementById('dash-filter-year')?.value || '';
+  const year    = document.getElementById('dash-filter-year')?.value || '';
   const jabatan = document.getElementById('dash-filter-jabatan')?.value || '';
 
   const counts = await Promise.all(tables.map(async t => {
     let q = supabaseClient.from(TABLES[t.key]).select('*', { count: 'exact', head: true });
-    if (year) q = q.eq('Year', year);
-    if (jabatan) q = q.eq('Department', jabatan);
+    if (year)    q = q.eq(t.yearCol, year);
+    if (jabatan) q = q.eq(t.deptCol, jabatan);
     const { count } = await q;
-    return { ...t, count: count || 0 };
+    return { ...t, count: count ?? 0 };
   }));
 
   document.getElementById('stat-grid').innerHTML = counts.map(c => `

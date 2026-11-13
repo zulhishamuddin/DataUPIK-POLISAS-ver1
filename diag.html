@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DataUPIK — Diagnostik Supabase</title>
+<style>
+  body { font-family: "Segoe UI", sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }
+  h1 { color: #1e3a5f; font-size: 1.3rem; margin-bottom: 4px; }
+  p.sub { color: #666; font-size: .85rem; margin-bottom: 20px; }
+  .card { background: #fff; border-radius: 10px; padding: 20px 24px; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.07); }
+  .card h2 { font-size: 1rem; margin-bottom: 12px; color: #1e3a5f; }
+  .row { display: flex; align-items: flex-start; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: .88rem; }
+  .row:last-child { border-bottom: none; }
+  .label { flex: 0 0 220px; color: #444; font-weight: 600; word-break: break-all; }
+  .val { flex: 1; }
+  .ok   { color: #16a34a; font-weight: 700; }
+  .err  { color: #dc2626; font-weight: 700; }
+  .warn { color: #d97706; font-weight: 700; }
+  .run  { color: #2563eb; }
+  pre   { background: #fef2f2; color: #991b1b; border-radius: 6px; padding: 8px 10px; font-size: .78rem; white-space: pre-wrap; word-break: break-all; margin: 4px 0 0; }
+  .info-box { background: #dbeafe; border: 1px solid #93c5fd; border-radius: 8px; padding: 12px 16px; font-size: .85rem; color: #1d4ed8; margin-bottom: 20px; }
+  .info-box code { background: #bfdbfe; padding: 1px 5px; border-radius: 3px; font-size: .82rem; }
+  button { background: #1e3a5f; color: #fff; border: none; border-radius: 7px; padding: 10px 24px; font-size: .9rem; cursor: pointer; margin-top: 6px; }
+  button:hover { background: #2a5298; }
+</style>
+</head>
+<body>
+
+<h1>🔍 DataUPIK — Diagnostik Sambungan Supabase</h1>
+<p class="sub">Halaman ini menguji sambungan ke Supabase dan menunjukkan punca sebenar sebarang masalah login.</p>
+
+<div class="info-box">
+  <strong>Cara guna:</strong> Buka halaman ini dalam browser. Klik <strong>"Jalankan Diagnostik"</strong>. Semua hasil ujian akan ditunjukkan di bawah secara automatik.
+  Jika ada ✅ baris gagal, ikut arahan yang diberikan.
+</div>
+
+<button onclick="runAll()">▶ Jalankan Diagnostik</button>
+
+<div id="results" style="margin-top:20px"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
+<script src="js/supabase-config.js"></script>
+<script>
+
+const R = document.getElementById('results');
+
+function section(title) {
+  const c = document.createElement('div');
+  c.className = 'card';
+  c.innerHTML = `<h2>${title}</h2><div class="rows"></div>`;
+  R.appendChild(c);
+  return c.querySelector('.rows');
+}
+
+function row(container, label, statusHtml, detail) {
+  const d = document.createElement('div');
+  d.className = 'row';
+  d.innerHTML = `<div class="label">${label}</div><div class="val">${statusHtml}${detail ? '<pre>' + esc(detail) + '</pre>' : ''}</div>`;
+  container.appendChild(d);
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function ok(msg)   { return `<span class="ok">✅ ${msg}</span>`; }
+function err(msg)  { return `<span class="err">❌ ${msg}</span>`; }
+function warn(msg) { return `<span class="warn">⚠️ ${msg}</span>`; }
+function run(msg)  { return `<span class="run">🔄 ${msg}</span>`; }
+
+async function runAll() {
+  R.innerHTML = '';
+  document.querySelector('button').disabled = true;
+  document.querySelector('button').textContent = '⏳ Sedang menguji...';
+
+  // ── 1. Config ──
+  const cfg = section('1. Konfigurasi (supabase-config.js)');
+  row(cfg, 'SUPABASE_URL', SUPABASE_URL ? ok(SUPABASE_URL) : err('Tiada'));
+  const keyOk = typeof SUPABASE_ANON_KEY === 'string' && SUPABASE_ANON_KEY.length > 20;
+  const keyFmt = SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.startsWith('eyJ')
+    ? ok('Format JWT betul (eyJ...)')
+    : SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.startsWith('sb_publishable_')
+      ? warn('Format baru Supabase (sb_publishable_...) — mungkin tidak serasi dengan supabase-js v2. Dapatkan JWT key dari Settings → API')
+      : err('Key tidak ditemui atau kosong');
+  row(cfg, 'SUPABASE_ANON_KEY', keyFmt, SUPABASE_ANON_KEY ? SUPABASE_ANON_KEY.substring(0,40) + '...' : '');
+  row(cfg, 'supabaseClient', typeof supabaseClient !== 'undefined' ? ok('Objek wujud') : err('Gagal dibuat'));
+
+  // ── 2. Network ping ──
+  const net = section('2. Sambungan Rangkaian ke Supabase');
+  try {
+    const t0 = Date.now();
+    const resp = await fetch(SUPABASE_URL + '/rest/v1/', {
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+    });
+    const ms = Date.now() - t0;
+    if (resp.status === 200 || resp.status === 400 || resp.status === 404) {
+      row(net, 'HTTP ke Supabase REST API', ok('Dapat dihubungi (' + resp.status + ') dalam ' + ms + 'ms'));
+    } else {
+      const body = await resp.text();
+      row(net, 'HTTP ke Supabase REST API', err('HTTP ' + resp.status), body.substring(0,300));
+    }
+  } catch (e) {
+    row(net, 'HTTP ke Supabase REST API', err('Gagal — tiada sambungan internet atau URL salah'), e.message);
+  }
+
+  // ── 3. Table access via supabase-js ──
+  const tbls = section('3. Akses Jadual (via supabase-js)');
+  const tableList = [
+    ['Data admin',           TABLES.admin,        'Admin login'],
+    ['Data pensyarah',       TABLES.pensyarah,     'Pendaftaran / login pensyarah'],
+    ['Data penyelidikan',    TABLES.penyelidikan,  'Modul Penyelidikan'],
+    ['Data inovasi',         TABLES.inovasi,       'Modul Inovasi'],
+    ['Data IP dan komersial',TABLES.ip,            'Modul IP & Komersial'],
+    ['Data geran',           TABLES.geran,         'Modul Geran'],
+    ['Data aset tak ketara', TABLES.aset,          'Modul Aset'],
+    ['Data penyelaras UPIK', TABLES.penyelaras,    'Halaman Penyelaras'],
+  ];
+
+  for (const [display, tbl, usage] of tableList) {
+    try {
+      const { data, error, count } = await supabaseClient
+        .from(tbl)
+        .select('*', { count: 'exact', head: true });
+      if (error) {
+        const hint = getHint(error);
+        row(tbls, display + '<br><small style="color:#888">(' + usage + ')</small>', err(error.code + ' — ' + error.message), hint);
+      } else {
+        row(tbls, display + '<br><small style="color:#888">(' + usage + ')</small>', ok('Boleh diakses — ' + (count ?? '?') + ' rekod'));
+      }
+    } catch (e) {
+      row(tbls, display, err('Exception: ' + e.message));
+    }
+  }
+
+  // ── 4. Admin login simulation ──
+  const login = section('4. Simulasi Login Admin');
+  row(login, 'Login ID yang diuji', '<code>Zulhisham</code>  |  Password: <code>Admin123</code> (dari README)');
+  try {
+    const { data, error } = await supabaseClient
+      .from(TABLES.admin)
+      .select('*')
+      .eq('Login ID', 'Zulhisham')
+      .single();
+    if (error) {
+      const hint = getHint(error);
+      row(login, 'Hasil query', err(error.code + ' — ' + error.message), hint);
+    } else if (data) {
+      row(login, 'Rekod ditemui', ok('Rekod admin wujud! Login sepatutnya berjaya.'), 'Nama: ' + (data['Nama']||'?') + ' | ID: ' + (data['ID']||'?'));
+    } else {
+      row(login, 'Rekod ditemui', warn('Tiada rekod — Login ID "Zulhisham" tidak wujud dalam jadual "Data admin"'), 'Sila tambah rekod admin di Supabase Table Editor');
+    }
+  } catch (e) {
+    row(login, 'Hasil query', err('Exception: ' + e.message));
+  }
+
+  // ── 5. Register pensyarah simulation ──
+  const reg = section('5. Simulasi Pendaftaran Pensyarah');
+  try {
+    const { data, error } = await supabaseClient
+      .from(TABLES.pensyarah)
+      .select('id', { count: 'exact', head: true });
+    if (error) {
+      row(reg, 'SELECT pada Data pensyarah', err(error.code + ' — ' + error.message), getHint(error));
+    } else {
+      row(reg, 'SELECT pada Data pensyarah', ok('Boleh baca'));
+    }
+  } catch (e) {
+    row(reg, 'SELECT pada Data pensyarah', err(e.message));
+  }
+
+  // Test INSERT permission
+  try {
+    const testId = 'TEST_DIAG_' + Date.now();
+    const { error } = await supabaseClient
+      .from(TABLES.pensyarah)
+      .insert([{ id: testId, Nama: 'DIAG_TEST', 'Login ID': testId, Password: 'x', Jabatan: 'JKA', Create_at: new Date().toISOString() }]);
+    if (error) {
+      row(reg, 'INSERT pada Data pensyarah', err(error.code + ' — ' + error.message), getHint(error));
+    } else {
+      row(reg, 'INSERT pada Data pensyarah', ok('Boleh insert — pendaftaran sepatutnya berfungsi'));
+      // Clean up test record
+      await supabaseClient.from(TABLES.pensyarah).delete().eq('id', testId);
+      row(reg, 'Pembersihan rekod ujian', ok('Rekod ujian dipadam'));
+    }
+  } catch (e) {
+    row(reg, 'INSERT pada Data pensyarah', err(e.message));
+  }
+
+  document.querySelector('button').disabled = false;
+  document.querySelector('button').textContent = '▶ Jalankan Semula';
+}
+
+function getHint(error) {
+  if (!error) return '';
+  const c = error.code || '';
+  const m = (error.message || '').toLowerCase();
+  if (c === '42501' || m.includes('permission denied') || m.includes('row-level security')) {
+    return '🔧 FIX: Polisi RLS belum dikonfigurasi. Jalankan SQL di Supabase SQL Editor:\n' +
+      'CREATE POLICY "allow_all" ON "' + '...' + '" FOR ALL USING (true);\n' +
+      'Atau: Dashboard → Table Editor → jadual → RLS → Add policy → "Enable read access for all users"';
+  }
+  if (c === 'PGRST116') return '📋 Tiada rekod ditemui dengan kriteria tersebut.';
+  if (m.includes('invalid api key') || m.includes('jwt') || m.includes('apikey')) {
+    return '🔑 FIX: ANON KEY tidak sah. Pergi ke Supabase Dashboard → Settings → API → salin "anon/public" key → gantikan dalam supabase-config.js';
+  }
+  if (m.includes('relation') && m.includes('does not exist')) {
+    return '📋 FIX: Nama jadual salah. Semak ejaan tepat nama jadual dalam Supabase Table Editor.';
+  }
+  if (m.includes('fetch') || m.includes('network') || m.includes('failed to fetch')) {
+    return '🌐 FIX: Tiada sambungan internet atau URL Supabase salah.';
+  }
+  return error.hint || error.details || '';
+}
+
+</script>
+</body>
+</html>
