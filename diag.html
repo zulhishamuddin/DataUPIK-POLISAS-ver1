@@ -94,14 +94,16 @@ async function runAll() {
       headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
     });
     const ms = Date.now() - t0;
-    if (resp.status === 200 || resp.status === 400 || resp.status === 404) {
-      row(net, 'HTTP ke Supabase REST API', ok('Dapat dihubungi (' + resp.status + ') dalam ' + ms + 'ms'));
+    // Any HTTP response (even 401/403) means the server was reached successfully
+    if (resp.status < 500) {
+      const note = resp.status === 401 ? ' — key sedang disahkan' : resp.status === 403 ? ' — RLS aktif' : '';
+      row(net, 'HTTP ke Supabase REST API', ok('Server dijangkau (HTTP ' + resp.status + ') dalam ' + ms + 'ms' + note));
     } else {
       const body = await resp.text();
-      row(net, 'HTTP ke Supabase REST API', err('HTTP ' + resp.status), body.substring(0,300));
+      row(net, 'HTTP ke Supabase REST API', err('HTTP ' + resp.status + ' — ralat pelayan'), body.substring(0,300));
     }
   } catch (e) {
-    row(net, 'HTTP ke Supabase REST API', err('Gagal — tiada sambungan internet atau URL salah'), e.message);
+    row(net, 'HTTP ke Supabase REST API', err('Gagal — tiada sambungan internet atau SUPABASE_URL salah'), e.message);
   }
 
   // ── 3. Table access via supabase-js ──

@@ -248,10 +248,8 @@ function markSidebarActive() {
   }
 }
 
-// ── Default applyFilters stub (overridden per page) ──
-if (typeof applyFilters === 'undefined') {
-  window.applyFilters = function() {};
-}
+// ── Default applyFilters stub — safe fallback, overridden per page ──
+window.applyFilters = window.applyFilters || function() {};
 
 // ── Render sidebar HTML (reusable) ──
 function sidebarHTML(active) {
