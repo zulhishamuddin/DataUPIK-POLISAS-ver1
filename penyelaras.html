@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Penyelaras UPIK — DataUPIK POLISAS</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="main-content">
+    <div class="top-navbar">
+      <button class="hamburger" onclick="toggleSidebar()"><span></span><span></span><span></span></button>
+      <div class="navbar-title">📞 Maklumat Penyelaras UPIK</div>
+      <div class="nav-user-info" id="nav-user-info"></div>
+    </div>
+    <div id="search-bar-placeholder"></div>
+    <div class="page-content">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Penyelaras UPIK POLISAS</div>
+          <div class="page-subtitle">Senarai penyelaras mengikut portfolio untuk rujukan pensyarah</div>
+        </div>
+        <div id="admin-actions" style="display:none">
+          <button class="btn btn-primary btn-sm" onclick="openAddModal()">➕ Tambah Penyelaras</button>
+        </div>
+      </div>
+
+      <!-- Info Banner -->
+      <div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:.88rem;color:#1d4ed8;">
+        <strong>ℹ️ Rujukan Pensyarah:</strong> Hubungi penyelaras yang berkaitan dengan aktiviti penyelidikan, inovasi dan komersial anda.
+      </div>
+
+      <div class="penyelaras-grid" id="penyelaras-grid">
+        <div class="loading-spinner"><div class="spinner"></div> Memuatkan...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Modal (Admin only) -->
+<div class="modal-overlay" id="modal-form">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-form-title">Tambah Penyelaras</div>
+      <button class="modal-close" onclick="closeModal('modal-form')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="modal-alert" class="alert alert-danger"></div>
+      <div class="form-group"><label class="form-label">Nama Penuh *</label><input class="form-control" id="f-nama"></div>
+      <div class="form-group"><label class="form-label">Portfolio *</label><input class="form-control" id="f-portfolio"></div>
+      <div class="form-group"><label class="form-label">Jabatan *</label>
+        <select class="form-control" id="f-jabatan">
+          <option value="">--Pilih--</option>
+          ${JABATAN_LIST ? '' : ''}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Email *</label><input class="form-control" id="f-email" type="email"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-form')">Batal</button>
+      <button class="btn btn-primary" id="btn-save" onclick="saveData()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+const user = initPage('penyelaras');
+let allData = [], editingId = null;
+
+if (user) {
+  document.getElementById('sidebar-placeholder').innerHTML = sidebarHTML('penyelaras');
+  document.getElementById('search-bar-placeholder').innerHTML = searchBarHTML('semua');
+  populateYearFilter('filter-year'); populateJabatanFilter('filter-jabatan'); populateSdgFilter('filter-sdg');
+  if (user.role === 'admin') document.getElementById('admin-actions').style.display = '';
+  // Populate jabatan in form
+  const jabSel = document.getElementById('f-jabatan');
+  if (jabSel) JABATAN_LIST.forEach(j => { const o = document.createElement('option'); o.value = j.kod; o.textContent = j.kod + ' — ' + j.nama; jabSel.appendChild(o); });
+  loadData();
+}
+
+async function loadData() {
+  const { data, error } = await supabaseClient.from(TABLES.penyelaras).select('*');
+  if (error) { showToast('Ralat: ' + error.message, 'error'); return; }
+  allData = data || [];
+  renderCards(allData);
+}
+
+function renderCards(data) {
+  if (!data.length) {
+    document.getElementById('penyelaras-grid').innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">Tiada maklumat penyelaras</div></div>';
+    return;
+  }
+  document.getElementById('penyelaras-grid').innerHTML = data.map(r => {
+    const initials = (r['Nama']||'?').split(' ').filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('');
+    const isAdmin = user.role === 'admin';
+    return `
+    <div class="penyelaras-card">
+      <div class="penyelaras-avatar">${initials}</div>
+      <div style="flex:1">
+        <div class="penyelaras-name">${esc(r['Nama'])}</div>
+        <div class="penyelaras-portfolio">📌 ${esc(r['Portfolio'])}</div>
+        <div class="penyelaras-meta">🏢 ${esc(r['Jabatan'])}</div>
+        <div class="penyelaras-meta">✉️ <a href="mailto:${esc(r['email'])}" style="color:var(--accent)">${esc(r['email'])}</a></div>
+        ${isAdmin ? `<div style="margin-top:10px;display:flex;gap:6px">
+          <button class="btn btn-secondary btn-sm" onclick="openEditModal('${esc(r['Nama'])}')">✏️</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteRecord('${esc(r['Nama'])}')">🗑️</button>
+        </div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openAddModal() {
+  editingId = null;
+  document.getElementById('modal-form-title').textContent = 'Tambah Penyelaras';
+  document.getElementById('modal-alert').classList.remove('show');
+  document.getElementById('f-nama').value = '';
+  document.getElementById('f-portfolio').value = '';
+  document.getElementById('f-jabatan').value = '';
+  document.getElementById('f-email').value = '';
+  openModal('modal-form');
+}
+
+function openEditModal(nama) {
+  const r = allData.find(x => x['Nama'] === nama); if (!r) return;
+  editingId = nama;
+  document.getElementById('modal-form-title').textContent = 'Kemaskini Penyelaras';
+  document.getElementById('modal-alert').classList.remove('show');
+  document.getElementById('f-nama').value = r['Nama'] || '';
+  document.getElementById('f-portfolio').value = r['Portfolio'] || '';
+  document.getElementById('f-jabatan').value = r['Jabatan'] || '';
+  document.getElementById('f-email').value = r['email'] || '';
+  openModal('modal-form');
+}
+
+async function saveData() {
+  const nama = document.getElementById('f-nama').value.trim();
+  const portfolio = document.getElementById('f-portfolio').value.trim();
+  const jabatan = document.getElementById('f-jabatan').value;
+  const email = document.getElementById('f-email').value.trim();
+  if (!nama || !portfolio || !jabatan || !email) {
+    document.getElementById('modal-alert').textContent = 'Sila isi semua maklumat.';
+    document.getElementById('modal-alert').classList.add('show'); return;
+  }
+  const payload = { Nama: nama, Portfolio: portfolio, Jabatan: jabatan, email };
+  const btn = document.getElementById('btn-save'); btn.disabled = true; btn.textContent = 'Menyimpan…';
+  let error;
+  if (editingId) {
+    ({ error } = await supabaseClient.from(TABLES.penyelaras).update(payload).eq('Nama', editingId));
+  } else {
+    ({ error } = await supabaseClient.from(TABLES.penyelaras).insert([payload]));
+  }
+  btn.disabled = false; btn.textContent = 'Simpan';
+  if (error) { document.getElementById('modal-alert').textContent = error.message; document.getElementById('modal-alert').classList.add('show'); return; }
+  closeModal('modal-form'); showToast('Berjaya disimpan!', 'success'); loadData();
+}
+
+async function deleteRecord(nama) {
+  if (!confirm('Padam penyelaras ini?')) return;
+  const { error } = await supabaseClient.from(TABLES.penyelaras).delete().eq('Nama', nama);
+  if (error) { showToast('Ralat: ' + error.message, 'error'); return; }
+  showToast('Dipadam.', 'success'); loadData();
+}
+</script>
+</body>
+</html>

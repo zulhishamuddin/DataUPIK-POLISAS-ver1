@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DataUPIK POLISAS — Log Masuk</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="assets/logo-upik.jpg" alt="Logo UPIK POLISAS">
+    </div>
+    <div class="login-title">DataUPIK POLISAS</div>
+    <div class="login-subtitle">Sistem Pengurusan Data Penyelidikan, Inovasi &amp; Komersial</div>
+
+    <div class="login-tabs">
+      <button class="login-tab active" id="tab-pensyarah" onclick="switchTab('pensyarah')">Pensyarah</button>
+      <button class="login-tab" id="tab-admin" onclick="switchTab('admin')">Admin</button>
+    </div>
+
+    <!-- Alert -->
+    <div class="alert alert-danger" id="alert-msg"></div>
+    <div class="alert alert-success" id="alert-success"></div>
+
+    <!-- PENSYARAH LOGIN FORM -->
+    <div id="panel-pensyarah">
+      <div id="form-login-pensyarah">
+        <div class="form-group">
+          <label class="form-label">Login ID</label>
+          <input type="text" class="form-control" id="p-loginid" placeholder="Masukkan Login ID anda">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Kata Laluan</label>
+          <input type="password" class="form-control" id="p-password" placeholder="Masukkan kata laluan" onkeydown="if(event.key==='Enter')doLoginPensyarah()">
+        </div>
+        <button class="btn btn-primary" onclick="doLoginPensyarah()" id="btn-login-p">Log Masuk</button>
+        <div class="register-link">
+          Belum ada akaun? <a href="#" onclick="showRegister()">Daftar di sini</a>
+        </div>
+      </div>
+
+      <!-- REGISTER FORM (hidden by default) -->
+      <div id="form-register" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Nama Penuh</label>
+          <input type="text" class="form-control" id="r-nama" placeholder="Nama penuh">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Login ID</label>
+          <input type="text" class="form-control" id="r-loginid" placeholder="Buat Login ID unik">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Jabatan</label>
+          <select class="form-control" id="r-jabatan">
+            <option value="">-- Pilih Jabatan --</option>
+            <option value="JKA">Jabatan Kejuruteraan Awam</option>
+            <option value="JKE">Jabatan Kejuruteraan Elektrik</option>
+            <option value="JKM">Jabatan Kejuruteraan Mekanikal</option>
+            <option value="JTM">Jabatan Teknologi Makanan</option>
+            <option value="JP">Jabatan Perdagangan</option>
+            <option value="JPA">Jabatan Pengajian Am</option>
+            <option value="JMSK">Jabatan Matematik, Sains dan Komputer</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Kata Laluan</label>
+          <input type="password" class="form-control" id="r-password" placeholder="Buat kata laluan">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sahkan Kata Laluan</label>
+          <input type="password" class="form-control" id="r-confirm" placeholder="Ulangi kata laluan">
+        </div>
+        <button class="btn btn-primary" onclick="doRegister()" id="btn-reg">Daftar Akaun</button>
+        <div class="register-link">
+          Sudah ada akaun? <a href="#" onclick="showLogin()">Log Masuk</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMIN LOGIN FORM -->
+    <div id="panel-admin" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Login ID Admin</label>
+        <input type="text" class="form-control" id="a-loginid" placeholder="Login ID admin">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Kata Laluan</label>
+        <input type="password" class="form-control" id="a-password" placeholder="Kata laluan admin" onkeydown="if(event.key==='Enter')doLoginAdmin()">
+      </div>
+      <button class="btn btn-primary" onclick="doLoginAdmin()" id="btn-login-a">Log Masuk sebagai Admin</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  // Redirect if already logged in
+  if (getSession()) window.location.href = 'dashboard.html';
+
+  function switchTab(tab) {
+    document.getElementById('panel-pensyarah').style.display = tab === 'pensyarah' ? '' : 'none';
+    document.getElementById('panel-admin').style.display     = tab === 'admin'     ? '' : 'none';
+    document.getElementById('tab-pensyarah').classList.toggle('active', tab === 'pensyarah');
+    document.getElementById('tab-admin').classList.toggle('active', tab === 'admin');
+    clearAlert();
+  }
+
+  function showAlert(msg, type = 'danger') {
+    const el = document.getElementById(type === 'success' ? 'alert-success' : 'alert-msg');
+    const other = document.getElementById(type === 'success' ? 'alert-msg' : 'alert-success');
+    other.classList.remove('show');
+    el.textContent = msg;
+    el.classList.add('show');
+  }
+  function clearAlert() {
+    document.getElementById('alert-msg').classList.remove('show');
+    document.getElementById('alert-success').classList.remove('show');
+  }
+  function showRegister() {
+    document.getElementById('form-login-pensyarah').style.display = 'none';
+    document.getElementById('form-register').style.display = '';
+    clearAlert();
+  }
+  function showLogin() {
+    document.getElementById('form-register').style.display = 'none';
+    document.getElementById('form-login-pensyarah').style.display = '';
+    clearAlert();
+  }
+
+  async function doLoginAdmin() {
+    const loginId = document.getElementById('a-loginid').value.trim();
+    const password = document.getElementById('a-password').value;
+    if (!loginId || !password) { showAlert('Sila isi semua maklumat.'); return; }
+    const btn = document.getElementById('btn-login-a');
+    btn.textContent = 'Sedang Log Masuk…'; btn.disabled = true;
+    const res = await loginAdmin(loginId, password);
+    btn.textContent = 'Log Masuk sebagai Admin'; btn.disabled = false;
+    if (res.success) window.location.href = 'dashboard.html';
+    else showAlert(res.message);
+  }
+
+  async function doLoginPensyarah() {
+    const loginId = document.getElementById('p-loginid').value.trim();
+    const password = document.getElementById('p-password').value;
+    if (!loginId || !password) { showAlert('Sila isi semua maklumat.'); return; }
+    const btn = document.getElementById('btn-login-p');
+    btn.textContent = 'Sedang Log Masuk…'; btn.disabled = true;
+    const res = await loginPensyarah(loginId, password);
+    btn.textContent = 'Log Masuk'; btn.disabled = false;
+    if (res.success) window.location.href = 'dashboard.html';
+    else showAlert(res.message);
+  }
+
+  async function doRegister() {
+    const nama = document.getElementById('r-nama').value.trim();
+    const loginId = document.getElementById('r-loginid').value.trim();
+    const jabatan = document.getElementById('r-jabatan').value;
+    const password = document.getElementById('r-password').value;
+    const confirm = document.getElementById('r-confirm').value;
+    if (!nama || !loginId || !jabatan || !password) { showAlert('Sila isi semua maklumat.'); return; }
+    if (password !== confirm) { showAlert('Kata laluan tidak sepadan.'); return; }
+    if (password.length < 6) { showAlert('Kata laluan mestilah sekurang-kurangnya 6 aksara.'); return; }
+    const btn = document.getElementById('btn-reg');
+    btn.textContent = 'Sedang mendaftar…'; btn.disabled = true;
+    const res = await registerPensyarah(nama, loginId, password, jabatan);
+    btn.textContent = 'Daftar Akaun'; btn.disabled = false;
+    if (res.success) {
+      showAlert('Pendaftaran berjaya! Sila log masuk.', 'success');
+      setTimeout(showLogin, 2000);
+    } else showAlert(res.message);
+  }
+</script>
+</body>
+</html>

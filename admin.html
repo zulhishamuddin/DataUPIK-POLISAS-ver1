@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Panel — DataUPIK POLISAS</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="main-content">
+    <div class="top-navbar">
+      <button class="hamburger" onclick="toggleSidebar()"><span></span><span></span><span></span></button>
+      <div class="navbar-title">⚙️ Panel Admin — Pengurusan Data</div>
+      <div class="nav-user-info" id="nav-user-info"></div>
+    </div>
+    <div id="search-bar-placeholder"></div>
+    <div class="page-content">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Pengurusan Data &amp; Pengesahan</div>
+          <div class="page-subtitle">Sahkan data pensyarah, semak semua modul</div>
+        </div>
+      </div>
+
+      <!-- Pending Verification Section -->
+      <div style="margin-bottom:28px">
+        <div style="font-weight:700;font-size:1rem;color:var(--primary);margin-bottom:14px">
+          ⏳ Data Menunggu Pengesahan
+          <span class="badge badge-pending" id="pending-count" style="margin-left:8px">0</span>
+        </div>
+
+        <!-- Pending tabs per module -->
+        <div class="tabs" id="pending-tabs">
+          <button class="tab-btn active" data-mod="penyelidikan" onclick="loadPending('penyelidikan',this)">🔬 Penyelidikan</button>
+          <button class="tab-btn" data-mod="inovasi" onclick="loadPending('inovasi',this)">💡 Inovasi</button>
+          <button class="tab-btn" data-mod="ip" onclick="loadPending('ip',this)">🏛️ IP</button>
+          <button class="tab-btn" data-mod="geran" onclick="loadPending('geran',this)">💰 Geran</button>
+          <button class="tab-btn" data-mod="aset" onclick="loadPending('aset',this)">🧾 Aset</button>
+        </div>
+
+        <div class="table-card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>UID</th>
+                  <th>Tajuk</th>
+                  <th>Ketua / Pencipta</th>
+                  <th>Jabatan</th>
+                  <th>Tahun</th>
+                  <th>Tindakan</th>
+                </tr>
+              </thead>
+              <tbody id="pending-tbody">
+                <tr><td colspan="6"><div class="loading-spinner"><div class="spinner"></div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Module Stats -->
+      <div style="font-weight:700;font-size:1rem;color:var(--primary);margin-bottom:14px">📊 Ringkasan Semua Modul</div>
+      <div class="stat-grid" id="admin-stat-grid">
+        <div class="stat-card"><div class="spinner"></div></div>
+      </div>
+
+      <!-- Quick links -->
+      <div style="font-weight:700;font-size:1rem;color:var(--primary);margin:24px 0 14px">🔗 Akses Pantas ke Modul</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
+        ${[
+          ['🔬','Penyelidikan','penyelidikan.html'],
+          ['💡','Inovasi','inovasi.html'],
+          ['🏛️','IP & Komersial','ip-komersial.html'],
+          ['💰','Geran','geran.html'],
+          ['🧾','Aset Tak Ketara','aset.html'],
+          ['📞','Penyelaras UPIK','penyelaras.html'],
+          ['👥','Pengurusan Pengguna','pengguna.html'],
+        ].map(([icon,label,href]) => `
+          <a href="${href}" style="display:flex;align-items:center;gap:10px;background:var(--white);border:1.5px solid var(--border);border-radius:10px;padding:14px 16px;font-weight:600;font-size:.88rem;color:var(--text);transition:all .2s;text-decoration:none" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
+            <span style="font-size:1.3rem">${icon}</span> ${label}
+          </a>`).join('')}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+const user = requireAdmin();
+if (user) {
+  document.getElementById('sidebar-placeholder').innerHTML = sidebarHTML('admin');
+  document.getElementById('search-bar-placeholder').innerHTML = searchBarHTML('semua');
+  populateYearFilter('filter-year'); populateJabatanFilter('filter-jabatan'); populateSdgFilter('filter-sdg');
+  renderNavUser();
+  // sidebar user info
+  const sf = document.getElementById('sidebar-user-info');
+  if (sf) sf.innerHTML = `<strong>${user.nama}</strong><br><span class="badge badge-admin" style="margin-top:4px">Admin</span>`;
+  loadPending('penyelidikan', document.querySelector('[data-mod="penyelidikan"]'));
+  loadAdminStats();
+}
+
+async function loadAdminStats() {
+  const modules = [
+    { key: 'penyelidikan', label: 'Penyelidikan', icon: '🔬', cls: 'blue' },
+    { key: 'inovasi',      label: 'Inovasi',       icon: '💡', cls: 'green' },
+    { key: 'ip',           label: 'IP & Komersial', icon: '🏛️', cls: 'purple' },
+    { key: 'geran',        label: 'Geran',           icon: '💰', cls: 'orange' },
+    { key: 'aset',         label: 'Aset Tak Ketara', icon: '🧾', cls: 'teal' },
+    { key: 'pensyarah',   label: 'Pensyarah Daftar',icon: '👤', cls: '' },
+  ];
+  const counts = await Promise.all(modules.map(async m => {
+    const { count } = await supabaseClient.from(TABLES[m.key]).select('*', { count: 'exact', head: true });
+    return { ...m, count: count || 0 };
+  }));
+  document.getElementById('admin-stat-grid').innerHTML = counts.map(c => `
+    <div class="stat-card ${c.cls}">
+      <div class="stat-icon">${c.icon}</div>
+      <div class="stat-value">${c.count}</div>
+      <div class="stat-label">${c.label}</div>
+    </div>`).join('');
+}
+
+let currentMod = 'penyelidikan';
+const modConfig = {
+  penyelidikan: { titleCol: 'Title (Research & Innovation)', leaderCol: 'Researcher Leader', uidCol: 'UID' },
+  inovasi:      { titleCol: 'Title Development / Innovation', leaderCol: 'Team Leader',       uidCol: 'UID' },
+  ip:           { titleCol: 'Title Development / Innovation', leaderCol: 'Team Leader',       uidCol: 'UID' },
+  geran:        { titleCol: 'Title Project',                  leaderCol: 'Team Leader',       uidCol: 'UID' },
+  aset:         { titleCol: 'Tajuk',                          leaderCol: 'Nama Pembekal/Perekacipta', uidCol: 'UID' },
+};
+
+async function loadPending(mod, btn) {
+  currentMod = mod;
+  document.querySelectorAll('#pending-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const cfg = modConfig[mod];
+  const { data, error } = await supabaseClient.from(TABLES[mod]).select('*').eq('status', 'pending');
+  if (error) { showToast('Ralat: ' + error.message, 'error'); return; }
+  const rows = data || [];
+  document.getElementById('pending-count').textContent = rows.length;
+  if (!rows.length) {
+    document.getElementById('pending-tbody').innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-state-icon">✅</div><div class="empty-state-text">Tiada data menunggu pengesahan</div></div></td></tr>';
+    return;
+  }
+  document.getElementById('pending-tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td style="font-family:monospace;font-size:.78rem">${esc(r[cfg.uidCol])}</td>
+      <td title="${esc(r[cfg.titleCol])}">${esc(r[cfg.titleCol])}</td>
+      <td>${esc(r[cfg.leaderCol])}</td>
+      <td>${esc(r['Department'] || r['Lokasi'] || '—')}</td>
+      <td>${esc(r['Year'] || r['Tahun'] || '—')}</td>
+      <td>
+        <button class="btn btn-success btn-sm" onclick="verifyRecord('${esc(r[cfg.uidCol])}')">✅ Sahkan</button>
+        <button class="btn btn-danger btn-sm" onclick="rejectRecord('${esc(r[cfg.uidCol])}')">❌ Tolak</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function verifyRecord(uid) {
+  const cfg = modConfig[currentMod];
+  const { error } = await supabaseClient.from(TABLES[currentMod]).update({ status: 'verified' }).eq(cfg.uidCol, uid);
+  if (error) { showToast('Ralat: ' + error.message, 'error'); return; }
+  showToast('Data berjaya disahkan!', 'success');
+  loadPending(currentMod, null);
+}
+
+async function rejectRecord(uid) {
+  if (!confirm('Tolak dan padam data ini?')) return;
+  const cfg = modConfig[currentMod];
+  const { error } = await supabaseClient.from(TABLES[currentMod]).delete().eq(cfg.uidCol, uid);
+  if (error) { showToast('Ralat: ' + error.message, 'error'); return; }
+  showToast('Data ditolak dan dipadam.', 'info');
+  loadPending(currentMod, null);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inovasi — DataUPIK POLISAS</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="main-content">
+    <div class="top-navbar">
+      <button class="hamburger" onclick="toggleSidebar()"><span></span><span></span><span></span></button>
+      <div class="navbar-title">💡 Inovasi &amp; Pertandingan</div>
+      <div class="nav-user-info" id="nav-user-info"></div>
+    </div>
+    <div id="search-bar-placeholder"></div>
+    <div class="page-content">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Data Inovasi &amp; Pertandingan</div>
+          <div class="page-subtitle" id="record-count-label">Memuatkan...</div>
+        </div>
+        <div class="d-flex gap-2" style="flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="printStatistik()">🖨️ Print</button>
+          <button class="btn btn-success btn-sm" id="btn-export" onclick="doExport()">📥 Export Excel</button>
+          <button class="btn btn-primary btn-sm" id="btn-tambah" onclick="openAddModal()">➕ Tambah Data</button>
+        </div>
+      </div>
+
+      <!-- Tabs by type -->
+      <div class="tabs">
+        <button class="tab-btn active" data-type="" onclick="setTypeFilter(this,'')">Semua</button>
+        <button class="tab-btn" data-type="eBook" onclick="setTypeFilter(this,'eBook')">eBook</button>
+        <button class="tab-btn" data-type="Product physical" onclick="setTypeFilter(this,'Product physical')">Produk Fizikal</button>
+        <button class="tab-btn" data-type="Product digital" onclick="setTypeFilter(this,'Product digital')">Produk Digital</button>
+        <button class="tab-btn" data-type="Book" onclick="setTypeFilter(this,'Book')">Buku</button>
+        <button class="tab-btn" data-type="Manual" onclick="setTypeFilter(this,'Manual')">Manual</button>
+        <button class="tab-btn" data-type="Buletin" onclick="setTypeFilter(this,'Buletin')">Buletin</button>
+      </div>
+
+      <div class="table-card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>UID</th>
+                <th>Ketua</th>
+                <th>Tajuk</th>
+                <th>Jenis</th>
+                <th>No. IP</th>
+                <th>Anugerah</th>
+                <th>Penganjur</th>
+                <th>Peringkat</th>
+                <th>Jabatan</th>
+                <th>Tahun</th>
+                <th>SDG</th>
+              </tr>
+            </thead>
+            <tbody id="data-tbody">
+              <tr><td colspan="11"><div class="loading-spinner"><div class="spinner"></div> Memuatkan data...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <div class="pagination-info" id="data-info"></div>
+          <div class="pagination-btns" id="data-pagination"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail Drawer -->
+<div class="drawer-overlay" id="detail-overlay" onclick="closeDrawer('detail')"></div>
+<div class="drawer" id="detail">
+  <div class="drawer-header">
+    <div class="drawer-title">💡 Detail Inovasi</div>
+    <button class="drawer-close" onclick="closeDrawer('detail')">✕</button>
+  </div>
+  <div class="drawer-body" id="detail-body"></div>
+  <div class="drawer-footer" id="detail-footer"></div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="modal-form">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-form-title">Tambah Data Inovasi</div>
+      <button class="modal-close" onclick="closeModal('modal-form')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="modal-alert" class="alert alert-danger"></div>
+      <div id="form-fields"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-form')">Batal</button>
+      <button class="btn btn-primary" id="btn-save" onclick="saveData()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+const user = initPage('inovasi');
+let allData = [], paginator, editingUid = null, typeFilter = '';
+
+if (user) {
+  document.getElementById('sidebar-placeholder').innerHTML = sidebarHTML('inovasi');
+  document.getElementById('search-bar-placeholder').innerHTML = searchBarHTML('inovasi');
+  populateYearFilter('filter-year'); populateJabatanFilter('filter-jabatan'); populateSdgFilter('filter-sdg');
+  if (user.role !== 'admin') {
+    document.getElementById('btn-export').style.display = 'none';
+    document.getElementById('btn-tambah').textContent = '➕ Hantar Data';
+  }
+  loadData();
+  const gs = sessionStorage.getItem('globalSearch');
+  if (gs) { document.getElementById('global-search').value = gs; sessionStorage.removeItem('globalSearch'); }
+}
+
+async function loadData() {
+  const { data, error } = await supabaseClient.from(TABLES.inovasi).select('*').order('Year', { ascending: false });
+  if (error) { showToast('Ralat: ' + error.message, 'error'); return; }
+  allData = data || [];
+  document.getElementById('record-count-label').textContent = allData.length + ' rekod';
+  paginator = new Paginator({ data: allData, pageSize: 15, renderFn: renderRows, containerId: 'data-tbody', paginationId: 'data-pagination', infoId: 'data-info' });
+  applyFilters();
+}
+
+function renderRows(rows) {
+  if (!rows.length) return '<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">Tiada rekod</div></div></td></tr>';
+  return rows.map((r,i) => `
+    <tr onclick="showDetail(${i + (paginator.page-1)*paginator.pageSize})">
+      <td style="font-family:monospace;color:var(--muted);font-size:.78rem">${esc(r['UID'])}</td>
+      <td>${esc(r['Team Leader'])}</td>
+      <td title="${esc(r['Title Development / Innovation'])}">${esc(r['Title Development / Innovation'])}</td>
+      <td><span class="badge badge-inst" style="font-size:.72rem">${esc(r['Type of Innovation / Development']||'—')}</span></td>
+      <td style="font-size:.78rem">${esc(r['Intelectual Property (IP) Number']||'—')}</td>
+      <td>${achievementBadge(r['Achievement'])}</td>
+      <td title="${esc(r['Organizer'])}" style="max-width:140px">${esc(r['Organizer']||'—')}</td>
+      <td>${levelBadge(r['Level'])}</td>
+      <td>${esc(r['Department'])}</td>
+      <td>${esc(r['Year'])}</td>
+      <td>${r['Sustainability Development Goals']?'<span class="sdg-tag" style="font-size:.7rem">'+esc((r['Sustainability Development Goals']||'').split('.')[0])+'</span>':'—'}</td>
+    </tr>`).join('');
+}
+
+function showDetail(idx) {
+  const r = paginator.filtered[idx];
+  if (!r) return;
+  const isAdmin = user.role === 'admin';
+  document.getElementById('detail-body').innerHTML = `
+    ${dRow('UID', r['UID'])}
+    ${dRow('Ketua', r['Team Leader'])}
+    ${dRow('Ahli 1', r['Teams member 1'])} ${dRow('Ahli 2', r['Teams member 2'])}
+    ${dRow('Ahli 3', r['Teams member 3'])} ${dRow('Ahli 4', r['Teams member 4'])} ${dRow('Ahli 5', r['Teams member 5'])}
+    ${dRow('Tajuk', r['Title Development / Innovation'])}
+    ${dRow('No. IP', r['Intelectual Property (IP) Number'])}
+    ${dRow('ISSN/ISBN', r['ISSN/ISBN/eISBN/eISSN'])}
+    ${dRow('Jenis Inovasi', r['Type of Innovation / Development'])}
+    ${dRow('Tajuk Konsultansi', r['Consultancy Title'])}
+    ${dRow('Nama Geran', r['Grant name'])}
+    ${dRow('Anugerah', achievementBadge(r['Achievement']))}
+    ${dRow('Penganjur', r['Organizer'])}
+    ${dRow('Industri / Institusi', r['Industry or institutions involved in research & development'])}
+    ${dRow('Tarikh Siap', fmtDate(r['Date of Completion']))}
+    ${dRow('Tempoh (bulan)', r['Duration (months)'])}
+    ${dRow('Jabatan', r['Department'])}
+    ${dRow('Tahun', r['Year'])}
+    ${dRow('Peringkat', levelBadge(r['Level']))}
+    ${dRow('SDG', sdgTag(r['Sustainability Development Goals']))}
+    ${dRow('Catatan', r['Remarks'])}
+  `;
+  const footer = document.getElementById('detail-footer');
+  if (isAdmin) {
+    footer.innerHTML = `
+      <button class="btn btn-info btn-sm" onclick="downloadFile('data-upik-storage','${esc(r['File(Surat/Sijil)'])}','Surat/Sijil')">📄 Surat/Sijil</button>
+      <button class="btn btn-info btn-sm" onclick="downloadFile('data-upik-storage','${esc(r['File (Poster inovasi)'])}','Poster')">🖼️ Poster</button>
+      <button class="btn btn-info btn-sm" onclick="downloadFile('data-upik-storage','${esc(r['File (Gambar Produk)'])}','Gambar')">📷 Gambar</button>
+      <button class="btn btn-secondary btn-sm" onclick="openEditModal('${esc(r['UID'])}')">✏️ Kemaskini</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteRecord('${esc(r['UID'])}')">🗑️ Padam</button>
+    `;
+  } else { footer.innerHTML = ''; }
+  openDrawer('detail');
+}
+
+function dRow(label, val) {
+  return `<div class="detail-row"><div class="detail-label">${label}</div><div class="detail-value">${val||'—'}</div></div>`;
+}
+
+function setTypeFilter(btn, type) {
+  typeFilter = type;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+}
+
+function applyFilters() {
+  if (!paginator) return;
+  const search  = (document.getElementById('global-search')?.value||'').toLowerCase();
+  const year    = document.getElementById('filter-year')?.value||'';
+  const jabatan = document.getElementById('filter-jabatan')?.value||'';
+  const sdg     = document.getElementById('filter-sdg')?.value||'';
+  paginator.filter(r => {
+    const matchType   = !typeFilter || (r['Type of Innovation / Development']||'') === typeFilter;
+    const matchYear   = !year    || String(r['Year']) === year;
+    const matchJabatan= !jabatan || r['Department'] === jabatan;
+    const matchSdg    = !sdg     || (r['Sustainability Development Goals']||'').includes(sdg.split('.')[0]);
+    const matchSearch = !search  || JSON.stringify(r).toLowerCase().includes(search);
+    return matchType && matchYear && matchJabatan && matchSdg && matchSearch;
+  });
+}
+
+function openAddModal() {
+  editingUid = null;
+  document.getElementById('modal-form-title').textContent = user.role === 'admin' ? 'Tambah Data Inovasi' : 'Hantar Data Inovasi';
+  document.getElementById('modal-alert').classList.remove('show');
+  document.getElementById('form-fields').innerHTML = buildForm(null);
+  openModal('modal-form');
+}
+function openEditModal(uid) {
+  const r = allData.find(x => x['UID'] === uid); if (!r) return;
+  editingUid = uid;
+  document.getElementById('modal-form-title').textContent = 'Kemaskini Data Inovasi';
+  document.getElementById('modal-alert').classList.remove('show');
+  document.getElementById('form-fields').innerHTML = buildForm(r);
+  closeDrawer('detail'); openModal('modal-form');
+}
+
+function buildForm(r) {
+  const v = k => r ? esc(r[k]||'') : '';
+  const jabOpts = JABATAN_LIST.map(j=>`<option value="${j.kod}" ${v('Department')===j.kod?'selected':''}>${j.kod} — ${j.nama}</option>`).join('');
+  const sdgOpts = SDG_LIST.map(s=>`<option value="${s}" ${v('Sustainability Development Goals').includes(s.split('.')[0])?'selected':''}>${s}</option>`).join('');
+  const lvlOpts = ['Institution','National','International'].map(l=>`<option value="${l}" ${v('Level')===l?'selected':''}>${l}</option>`).join('');
+  const yrOpts  = getYearList().map(y=>`<option value="${y}" ${v('Year')==String(y)?'selected':''}>${y}</option>`).join('');
+  const typeOpts= ['eBook','Book','Manual','Workbook','Module','Buletin','Product physical','Product digital'].map(t=>`<option value="${t}" ${v('Type of Innovation / Development')===t?'selected':''}>${t}</option>`).join('');
+  return `
+    <div class="form-group"><label class="form-label">Tajuk *</label><input class="form-control" id="f-title" value="${v('Title Development / Innovation')}"></div>
+    <div class="form-group"><label class="form-label">Ketua *</label><input class="form-control" id="f-leader" value="${v('Team Leader')}"></div>
+    <div class="form-group"><label class="form-label">Ahli 1</label><input class="form-control" id="f-m1" value="${v('Teams member 1')}"></div>
+    <div class="form-group"><label class="form-label">Ahli 2</label><input class="form-control" id="f-m2" value="${v('Teams member 2')}"></div>
+    <div class="form-group"><label class="form-label">Ahli 3</label><input class="form-control" id="f-m3" value="${v('Teams member 3')}"></div>
+    <div class="form-group"><label class="form-label">Ahli 4</label><input class="form-control" id="f-m4" value="${v('Teams member 4')}"></div>
+    <div class="form-group"><label class="form-label">Ahli 5</label><input class="form-control" id="f-m5" value="${v('Teams member 5')}"></div>
+    <div class="form-group"><label class="form-label">No. IP</label><input class="form-control" id="f-ip" value="${v('Intelectual Property (IP) Number')}"></div>
+    <div class="form-group"><label class="form-label">ISSN/ISBN</label><input class="form-control" id="f-issn" value="${v('ISSN/ISBN/eISBN/eISSN')}"></div>
+    <div class="form-group"><label class="form-label">Jenis Inovasi</label><select class="form-control" id="f-type"><option value="">--Pilih--</option>${typeOpts}</select></div>
+    <div class="form-group"><label class="form-label">Anugerah</label><input class="form-control" id="f-ach" value="${v('Achievement')}"></div>
+    <div class="form-group"><label class="form-label">Penganjur</label><input class="form-control" id="f-org" value="${v('Organizer')}"></div>
+    <div class="form-group"><label class="form-label">Industri / Institusi</label><input class="form-control" id="f-ind" value="${v('Industry or institutions involved in research & development')}"></div>
+    <div class="form-group"><label class="form-label">Tarikh Siap</label><input class="form-control" id="f-date" type="date" value="${v('Date of Completion')}"></div>
+    <div class="form-group"><label class="form-label">Tempoh (bulan)</label><input class="form-control" id="f-dur" type="number" value="${v('Duration (months)')}"></div>
+    <div class="form-group"><label class="form-label">Peringkat</label><select class="form-control" id="f-level"><option value="">--Pilih--</option>${lvlOpts}</select></div>
+    <div class="form-group"><label class="form-label">Jabatan *</label><select class="form-control" id="f-dept"><option value="">--Pilih--</option>${jabOpts}</select></div>
+    <div class="form-group"><label class="form-label">Tahun *</label><select class="form-control" id="f-year"><option value="">--Pilih--</option>${yrOpts}</select></div>
+    <div class="form-group"><label class="form-label">SDG</label><select class="form-control" id="f-sdg"><option value="">--Tiada--</option>${sdgOpts}</select></div>
+    <div class="form-group"><label class="form-label">Catatan</label><textarea class="form-control" id="f-remarks" rows="2">${v('Remarks')}</textarea></div>
+  `;
+}
+
+async function saveData() {
+  const title = document.getElementById('f-title').value.trim();
+  const leader= document.getElementById('f-leader').value.trim();
+  const dept  = document.getElementById('f-dept').value;
+  const year  = document.getElementById('f-year').value;
+  if (!title || !leader || !dept || !year) {
+    document.getElementById('modal-alert').textContent = 'Sila isi maklumat yang bertanda *.';
+    document.getElementById('modal-alert').classList.add('show'); return;
+  }
+  const payload = {
+    'Title Development / Innovation': title,
+    'Team Leader': leader,
+    'Teams member 1': document.getElementById('f-m1').value,
+    'Teams member 2': document.getElementById('f-m2').value,
+    'Teams member 3': document.getElementById('f-m3').value,
+    'Teams member 4': document.getElementById('f-m4').value,
+    'Teams member 5': document.getElementById('f-m5').value,
+    'Intelectual Property (IP) Number': document.getElementById('f-ip').value,
+    'ISSN/ISBN/eISBN/eISSN': document.getElementById('f-issn').value,
+    'Type of Innovation / Development': document.getElementById('f-type').value,
+    'Achievement': document.getElementById('f-ach').value,
+    'Organizer': document.getElementById('f-org').value,
+    'Industry or institutions involved in research & development': document.getElementById('f-ind').value,
+    'Date of Completion': document.getElementById('f-date').value,
+    'Duration (months)': document.getElementById('f-dur').value,
+    'Level': document.getElementById('f-level').value,
+    'Department': dept, 'Year': year,
+    'Sustainability Development Goals': document.getElementById('f-sdg').value,
+    'Remarks': document.getElementById('f-remarks').value,
+  };
+  const btn = document.getElementById('btn-save'); btn.disabled = true; btn.textContent = 'Menyimpan…';
+  let error;
+  if (editingUid) {
+    ({ error } = await supabaseClient.from(TABLES.inovasi).update(payload).eq('UID', editingUid));
+  } else {
+    payload['UID'] = 'I' + Date.now();
+    if (user.role !== 'admin') payload['status'] = 'pending';
+    ({ error } = await supabaseClient.from(TABLES.inovasi).insert([payload]));
+  }
+  btn.disabled = false; btn.textContent = 'Simpan';
+  if (error) { document.getElementById('modal-alert').textContent = error.message; document.getElementById('modal-alert').classList.add('show'); return; }
+  closeModal('modal-form');
+  showToast(editingUid ? 'Data berjaya dikemaskini!' : 'Data berjaya dihantar!', 'success');
+  loadData();
+}
+
+async function deleteRecord(uid) {
+  if (!confirm('Padam rekod ini?')) return;
+  const { error } = await supabaseClient.from(TABLES.inovasi).delete().eq('UID', uid);
+  if (error) { showToast('Ralat: ' + error.message, 'error'); return; }
+  closeDrawer('detail'); showToast('Rekod dipadam.', 'success'); loadData();
+}
+
+function doExport() {
+  if (user.role !== 'admin') { showToast('Hanya admin boleh mengeksport.', 'error'); return; }
+  exportExcel(paginator.filtered, 'DataUPIK_Inovasi');
+}
+</script>
+</body>
+</html>

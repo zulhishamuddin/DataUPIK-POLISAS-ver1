@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aset Tak Ketara — DataUPIK POLISAS</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="main-content">
+    <div class="top-navbar">
+      <button class="hamburger" onclick="toggleSidebar()"><span></span><span></span><span></span></button>
+      <div class="navbar-title">🧾 Aset Tak Ketara</div>
+      <div class="nav-user-info" id="nav-user-info"></div>
+    </div>
+    <div id="search-bar-placeholder"></div>
+    <div class="page-content">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Data Aset Tak Ketara</div>
+          <div class="page-subtitle" id="record-count-label">Memuatkan...</div>
+        </div>
+        <div class="d-flex gap-2" style="flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="printStatistik()">🖨️ Print</button>
+          <button class="btn btn-success btn-sm" id="btn-export" onclick="doExport()">📥 Export Excel</button>
+          <button class="btn btn-primary btn-sm" id="btn-tambah" onclick="openAddModal()">➕ Tambah Data</button>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>UID</th>
+                <th>No. Siri</th>
+                <th>Tajuk / Aset</th>
+                <th>Pencipta / Pembekal</th>
+                <th>Cara Diperolehi</th>
+                <th>Tarikh Terima</th>
+                <th>Harga Asal (RM)</th>
+                <th>Nilai Semasa (RM)</th>
+                <th>Lokasi</th>
+                <th>Tahun</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="data-tbody">
+              <tr><td colspan="11"><div class="loading-spinner"><div class="spinner"></div> Memuatkan data...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <div class="pagination-info" id="data-info"></div>
+          <div class="pagination-btns" id="data-pagination"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail Drawer -->
+<div class="drawer-overlay" id="detail-overlay" onclick="closeDrawer('detail')"></div>
+<div class="drawer" id="detail">
+  <div class="drawer-header">
+    <div class="drawer-title">🧾 Detail Aset Tak Ketara</div>
+    <button class="drawer-close" onclick="closeDrawer('detail')">✕</button>
+  </div>
+  <div class="drawer-body" id="detail-body"></div>
+  <div class="drawer-footer" id="detail-footer"></div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="modal-form">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-form-title">Tambah Aset Tak Ketara</div>
+      <button class="modal-close" onclick="closeModal('modal-form')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="modal-alert" class="alert alert-danger"></div>
+      <div id="form-fields"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-form')">Batal</button>
+      <button class="btn btn-primary" id="btn-save" onclick="saveData()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+const user = initPage('aset');
+let allData = [], paginator, editingUid = null;
+
+if (user) {
+  document.getElementById('sidebar-placeholder').innerHTML = sidebarHTML('aset');
+  document.getElementById('search-bar-placeholder').innerHTML = searchBarHTML('aset');
+  populateYearFilter('filter-year'); populateJabatanFilter('filter-jabatan'); populateSdgFilter('filter-sdg');
+  if (user.role !== 'admin') {
+    document.getElementById('btn-export').style.display = 'none';
+    document.getElementById('btn-tambah').textContent = '➕ Hantar Data';
+  }
+  loadData();
+}
+
+async function loadData() {
+  const { data, error } = await supabaseClient.from(TABLES.aset).select('*').order('Tahun', { ascending: false });
+  if (error) { showToast('Ralat: ' + error.message, 'error'); return; }
+  allData = data || [];
+  document.getElementById('record-count-label').textContent = allData.length + ' rekod';
+  paginator = new Paginator({ data: allData, pageSize: 15, renderFn: renderRows, containerId: 'data-tbody', paginationId: 'data-pagination', infoId: 'data-info' });
+  applyFilters();
+}
+
+function renderRows(rows) {
+  if (!rows.length) return '<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">Tiada rekod</div></div></td></tr>';
+  return rows.map((r,i) => `
+    <tr onclick="showDetail(${i + (paginator.page-1)*paginator.pageSize})">
+      <td style="font-family:monospace;color:var(--muted);font-size:.78rem">${esc(r['UID'])}</td>
+      <td style="font-size:.78rem">${esc(r['No. Siri Pendaftaran (Sila Kosongkan)']||'—')}</td>
+      <td title="${esc(r['Tajuk'])}">${esc(r['Tajuk'])}</td>
+      <td>${esc(r['Nama Pembekal/Perekacipta'])}</td>
+      <td title="${esc(r['Cara Aset Diperolehi'])}">${esc(r['Cara Aset Diperolehi']||'—')}</td>
+      <td>${fmtDate(r['Tarikh Terima'])}</td>
+      <td>${fmtRm(r['Harga Perolehan Asal (RM)'])}</td>
+      <td>${fmtRm(r['Anggaran Nilai Semasa (RM)'])}</td>
+      <td>${esc(r['Lokasi']||'—')}</td>
+      <td>${esc(r['Tahun'])}</td>
+      <td>${r['Status Aset Jika Berkaitan (Pindahan/ Pelupusan/Hapus Kira)']
+        ? `<span class="badge badge-pending">${esc(r['Status Aset Jika Berkaitan (Pindahan/ Pelupusan/Hapus Kira)'])}</span>`
+        : '<span class="badge badge-yes">Aktif</span>'}</td>
+    </tr>`).join('');
+}
+
+function showDetail(idx) {
+  const r = paginator.filtered[idx]; if (!r) return;
+  const isAdmin = user.role === 'admin';
+  document.getElementById('detail-body').innerHTML = `
+    ${dRow('UID', r['UID'])}
+    ${dRow('No. Siri Pendaftaran', r['No. Siri Pendaftaran (Sila Kosongkan)'])}
+    ${dRow('Tajuk Aset', r['Tajuk'])}
+    ${dRow('Pencipta / Pembekal', r['Nama Pembekal/Perekacipta'])}
+    ${dRow('Cara Diperolehi', r['Cara Aset Diperolehi'])}
+    ${dRow('Tarikh Terima', fmtDate(r['Tarikh Terima']))}
+    ${dRow('Harga Asal (RM)', fmtRm(r['Harga Perolehan Asal (RM)']))}
+    ${dRow('Anggaran Nilai Semasa', fmtRm(r['Anggaran Nilai Semasa (RM)']))}
+    ${dRow('Lokasi', r['Lokasi'])}
+    ${dRow('Tahun', r['Tahun'])}
+    ${dRow('Status Aset', r['Status Aset Jika Berkaitan (Pindahan/ Pelupusan/Hapus Kira)'] || '<span class="badge badge-yes">Aktif</span>')}
+  `;
+  const footer = document.getElementById('detail-footer');
+  if (isAdmin) {
+    footer.innerHTML = `
+      <button class="btn btn-secondary btn-sm" onclick="openEditModal('${esc(r['UID'])}')">✏️ Kemaskini</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteRecord('${esc(r['UID'])}')">🗑️ Padam</button>
+    `;
+  } else { footer.innerHTML = ''; }
+  openDrawer('detail');
+}
+
+function dRow(label, val) {
+  return `<div class="detail-row"><div class="detail-label">${label}</div><div class="detail-value">${val||'—'}</div></div>`;
+}
+
+function applyFilters() {
+  if (!paginator) return;
+  const search  = (document.getElementById('global-search')?.value||'').toLowerCase();
+  const year    = document.getElementById('filter-year')?.value||'';
+  paginator.filter(r => {
+    const matchYear   = !year || String(r['Tahun']) === year;
+    const matchSearch = !search || JSON.stringify(r).toLowerCase().includes(search);
+    return matchYear && matchSearch;
+  });
+}
+
+function openAddModal() {
+  editingUid = null;
+  document.getElementById('modal-form-title').textContent = user.role === 'admin' ? 'Tambah Aset Tak Ketara' : 'Hantar Aset Tak Ketara';
+  document.getElementById('modal-alert').classList.remove('show');
+  document.getElementById('form-fields').innerHTML = buildForm(null);
+  openModal('modal-form');
+}
+function openEditModal(uid) {
+  const r = allData.find(x => x['UID'] === uid); if (!r) return;
+  editingUid = uid;
+  document.getElementById('modal-form-title').textContent = 'Kemaskini Aset Tak Ketara';
+  document.getElementById('modal-alert').classList.remove('show');
+  document.getElementById('form-fields').innerHTML = buildForm(r);
+  closeDrawer('detail'); openModal('modal-form');
+}
+
+function buildForm(r) {
+  const v = k => r ? esc(r[k]||'') : '';
+  const yrOpts = getYearList().map(y=>`<option value="${y}" ${v('Tahun')==String(y)?'selected':''}>${y}</option>`).join('');
+  const lokOpts = JABATAN_LIST.map(j=>`<option value="${j.nama}" ${v('Lokasi')===j.nama?'selected':''}>${j.nama}</option>`).join('');
+  return `
+    <div class="form-group"><label class="form-label">Tajuk Aset *</label><input class="form-control" id="f-title" value="${v('Tajuk')}"></div>
+    <div class="form-group"><label class="form-label">Pencipta / Pembekal *</label><input class="form-control" id="f-creator" value="${v('Nama Pembekal/Perekacipta')}"></div>
+    <div class="form-group"><label class="form-label">No. Siri Pendaftaran</label><input class="form-control" id="f-siri" value="${v('No. Siri Pendaftaran (Sila Kosongkan)')}"></div>
+    <div class="form-group"><label class="form-label">Cara Aset Diperolehi</label>
+      <select class="form-control" id="f-cara">
+        <option value="">--Pilih--</option>
+        ${['Pembiayaan Sendiri','Peruntukan pendaftaran harta intelek JPPKK','Public Private Research Network (PPRN 2022)','Geran Transfer Technology 4TVET','Geran PPRN'].map(c=>`<option value="${c}" ${v('Cara Aset Diperolehi')===c?'selected':''}>${c}</option>`).join('')}
+        <option value="Lain-lain">Lain-lain</option>
+      </select></div>
+    <div class="form-group"><label class="form-label">Tarikh Terima</label><input class="form-control" id="f-date" type="date" value="${v('Tarikh Terima')}"></div>
+    <div class="form-group"><label class="form-label">Harga Asal (RM)</label><input class="form-control" id="f-harga" type="number" value="${v('Harga Perolehan Asal (RM)')}"></div>
+    <div class="form-group"><label class="form-label">Anggaran Nilai Semasa (RM)</label><input class="form-control" id="f-nilai" value="${v('Anggaran Nilai Semasa (RM)')}"></div>
+    <div class="form-group"><label class="form-label">Lokasi (Jabatan)</label><select class="form-control" id="f-lokasi"><option value="">--Pilih--</option>${lokOpts}</select></div>
+    <div class="form-group"><label class="form-label">Tahun *</label><select class="form-control" id="f-year"><option value="">--Pilih--</option>${yrOpts}</select></div>
+    <div class="form-group"><label class="form-label">Status Aset</label><input class="form-control" id="f-status" value="${v('Status Aset Jika Berkaitan (Pindahan/ Pelupusan/Hapus Kira)')}" placeholder="Kosongkan jika Aktif"></div>
+  `;
+}
+
+async function saveData() {
+  const title   = document.getElementById('f-title').value.trim();
+  const creator = document.getElementById('f-creator').value.trim();
+  const year    = document.getElementById('f-year').value;
+  if (!title || !creator || !year) {
+    document.getElementById('modal-alert').textContent = 'Sila isi maklumat yang bertanda *.';
+    document.getElementById('modal-alert').classList.add('show'); return;
+  }
+  const payload = {
+    'Tajuk': title,
+    'Nama Pembekal/Perekacipta': creator,
+    'No. Siri Pendaftaran (Sila Kosongkan)': document.getElementById('f-siri').value,
+    'Cara Aset Diperolehi': document.getElementById('f-cara').value,
+    'Tarikh Terima': document.getElementById('f-date').value,
+    'Harga Perolehan Asal (RM)': document.getElementById('f-harga').value,
+    'Anggaran Nilai Semasa (RM)': document.getElementById('f-nilai').value,
+    'Lokasi': document.getElementById('f-lokasi').value,
+    'Tahun': year,
+    'Status Aset Jika Berkaitan (Pindahan/ Pelupusan/Hapus Kira)': document.getElementById('f-status').value,
+  };
+  const btn = document.getElementById('btn-save'); btn.disabled = true; btn.textContent = 'Menyimpan…';
+  let error;
+  if (editingUid) {
+    ({ error } = await supabaseClient.from(TABLES.aset).update(payload).eq('UID', editingUid));
+  } else {
+    payload['UID'] = 'A' + Date.now();
+    if (user.role !== 'admin') payload['status'] = 'pending';
+    ({ error } = await supabaseClient.from(TABLES.aset).insert([payload]));
+  }
+  btn.disabled = false; btn.textContent = 'Simpan';
+  if (error) { document.getElementById('modal-alert').textContent = error.message; document.getElementById('modal-alert').classList.add('show'); return; }
+  closeModal('modal-form'); showToast('Data berjaya disimpan!', 'success'); loadData();
+}
+
+async function deleteRecord(uid) {
+  if (!confirm('Padam rekod ini?')) return;
+  const { error } = await supabaseClient.from(TABLES.aset).delete().eq('UID', uid);
+  if (error) { showToast('Ralat: ' + error.message, 'error'); return; }
+  closeDrawer('detail'); showToast('Rekod dipadam.', 'success'); loadData();
+}
+
+function doExport() {
+  if (user.role !== 'admin') { showToast('Hanya admin.', 'error'); return; }
+  exportExcel(paginator.filtered, 'DataUPIK_AsetTakKetara');
+}
+</script>
+</body>
+</html>

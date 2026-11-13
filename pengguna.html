@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pengurusan Pengguna — DataUPIK POLISAS</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <div id="sidebar-placeholder"></div>
+  <div class="main-content">
+    <div class="top-navbar">
+      <button class="hamburger" onclick="toggleSidebar()"><span></span><span></span><span></span></button>
+      <div class="navbar-title">👥 Pengurusan Pengguna</div>
+      <div class="nav-user-info" id="nav-user-info"></div>
+    </div>
+    <div id="search-bar-placeholder"></div>
+    <div class="page-content">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Senarai Pensyarah Berdaftar</div>
+          <div class="page-subtitle" id="user-count-label">Memuatkan...</div>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-success btn-sm" onclick="doExportUsers()">📥 Export Excel</button>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-card-header">
+          <div class="table-card-title">Pensyarah</div>
+          <div class="table-toolbar">
+            <input type="text" class="search-input" id="user-search" placeholder="🔍 Cari nama atau ID..." oninput="filterUsers(this.value)" style="width:220px">
+            <select class="filter-select" id="user-filter-jabatan" onchange="filterUsers(document.getElementById('user-search').value)">
+              <option value="">Semua Jabatan</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nama</th>
+                <th>Login ID</th>
+                <th>Jabatan</th>
+                <th>Tarikh Daftar</th>
+                <th>Tindakan</th>
+              </tr>
+            </thead>
+            <tbody id="user-tbody">
+              <tr><td colspan="6"><div class="loading-spinner"><div class="spinner"></div> Memuatkan...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <div class="pagination-info" id="user-info"></div>
+          <div class="pagination-btns" id="user-pagination"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="modal-edit">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Kemaskini Maklumat Pensyarah</div>
+      <button class="modal-close" onclick="closeModal('modal-edit')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="edit-alert" class="alert alert-danger"></div>
+      <div class="form-group"><label class="form-label">Nama Penuh</label><input class="form-control" id="e-nama"></div>
+      <div class="form-group"><label class="form-label">Login ID</label><input class="form-control" id="e-loginid"></div>
+      <div class="form-group"><label class="form-label">Jabatan</label>
+        <select class="form-control" id="e-jabatan">
+          <option value="">--Pilih--</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Kata Laluan Baru <span style="color:var(--muted);font-weight:400">(kosongkan jika tidak tukar)</span></label>
+        <input class="form-control" id="e-password" type="password" placeholder="Kata laluan baru">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-edit')">Batal</button>
+      <button class="btn btn-primary" id="btn-update" onclick="updateUser()">Kemaskini</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+const user = requireAdmin();
+let allUsers = [], paginator, editingId = null;
+
+if (user) {
+  document.getElementById('sidebar-placeholder').innerHTML = sidebarHTML('pengguna');
+  document.getElementById('search-bar-placeholder').innerHTML = searchBarHTML('semua');
+  populateYearFilter('filter-year'); populateJabatanFilter('filter-jabatan'); populateSdgFilter('filter-sdg');
+  renderNavUser();
+  const sf = document.getElementById('sidebar-user-info');
+  if (sf) sf.innerHTML = `<strong>${user.nama}</strong><br><span class="badge badge-admin" style="margin-top:4px">Admin</span>`;
+  // Populate jabatan filters
+  populateJabatanFilter('user-filter-jabatan');
+  const eSel = document.getElementById('e-jabatan');
+  JABATAN_LIST.forEach(j => { const o = document.createElement('option'); o.value = j.kod; o.textContent = j.kod + ' — ' + j.nama; eSel.appendChild(o); });
+  loadUsers();
+}
+
+async function loadUsers() {
+  const { data, error } = await supabaseClient.from(TABLES.pensyarah).select('*').order('Create_at', { ascending: false });
+  if (error) { showToast('Ralat: ' + error.message, 'error'); return; }
+  allUsers = data || [];
+  document.getElementById('user-count-label').textContent = allUsers.length + ' pengguna berdaftar';
+  paginator = new Paginator({
+    data: allUsers, pageSize: 20,
+    renderFn: renderRows,
+    containerId: 'user-tbody',
+    paginationId: 'user-pagination',
+    infoId: 'user-info',
+  });
+  paginator.render();
+}
+
+function renderRows(rows) {
+  if (!rows.length) return '<tr><td colspan="6"><div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">Tiada pengguna dijumpai</div></div></td></tr>';
+  return rows.map(r => `
+    <tr>
+      <td style="font-family:monospace;font-size:.78rem;color:var(--muted)">${esc(r['id'])}</td>
+      <td><strong>${esc(r['Nama'])}</strong></td>
+      <td>${esc(r['Login ID'])}</td>
+      <td>${esc(r['Jabatan']||'—')}</td>
+      <td style="font-size:.80rem;color:var(--muted)">${fmtDate(r['Create_at'])}</td>
+      <td>
+        <button class="btn btn-secondary btn-sm" onclick="openEdit('${esc(r['id'])}')">✏️ Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteUser('${esc(r['id'])}')">🗑️ Padam</button>
+      </td>
+    </tr>`).join('');
+}
+
+function filterUsers(search) {
+  if (!paginator) return;
+  const jabatan = document.getElementById('user-filter-jabatan').value;
+  const q = search.toLowerCase();
+  paginator.filter(r => {
+    const matchJ = !jabatan || r['Jabatan'] === jabatan;
+    const matchS = !q || (r['Nama']||'').toLowerCase().includes(q) || (r['Login ID']||'').toLowerCase().includes(q);
+    return matchJ && matchS;
+  });
+}
+
+function openEdit(id) {
+  const r = allUsers.find(x => x['id'] === id); if (!r) return;
+  editingId = id;
+  document.getElementById('edit-alert').classList.remove('show');
+  document.getElementById('e-nama').value = r['Nama'] || '';
+  document.getElementById('e-loginid').value = r['Login ID'] || '';
+  document.getElementById('e-jabatan').value = r['Jabatan'] || '';
+  document.getElementById('e-password').value = '';
+  openModal('modal-edit');
+}
+
+async function updateUser() {
+  const nama    = document.getElementById('e-nama').value.trim();
+  const loginId = document.getElementById('e-loginid').value.trim();
+  const jabatan = document.getElementById('e-jabatan').value;
+  const password = document.getElementById('e-password').value;
+  if (!nama || !loginId || !jabatan) {
+    document.getElementById('edit-alert').textContent = 'Sila isi semua maklumat.';
+    document.getElementById('edit-alert').classList.add('show'); return;
+  }
+  const payload = { Nama: nama, 'Login ID': loginId, Jabatan: jabatan };
+  if (password) payload['Password'] = password;
+  const btn = document.getElementById('btn-update'); btn.disabled = true; btn.textContent = 'Mengemas...';
+  const { error } = await supabaseClient.from(TABLES.pensyarah).update(payload).eq('id', editingId);
+  btn.disabled = false; btn.textContent = 'Kemaskini';
+  if (error) { document.getElementById('edit-alert').textContent = error.message; document.getElementById('edit-alert').classList.add('show'); return; }
+  closeModal('modal-edit'); showToast('Maklumat pengguna dikemaskini!', 'success'); loadUsers();
+}
+
+async function deleteUser(id) {
+  if (!confirm('Padam akaun pensyarah ini? Tindakan ini tidak boleh dibatalkan.')) return;
+  const { error } = await supabaseClient.from(TABLES.pensyarah).delete().eq('id', id);
+  if (error) { showToast('Ralat: ' + error.message, 'error'); return; }
+  showToast('Akaun dipadam.', 'success'); loadUsers();
+}
+
+function doExportUsers() {
+  if (!paginator) return;
+  const exportData = paginator.filtered.map(r => ({
+    ID: r['id'], Nama: r['Nama'], 'Login ID': r['Login ID'],
+    Jabatan: r['Jabatan'], 'Tarikh Daftar': fmtDate(r['Create_at']),
+  }));
+  exportExcel(exportData, 'DataUPIK_Senarai_Pensyarah');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — DataUPIK POLISAS</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+@media print {
+  .sidebar, .top-navbar, .search-filter-bar, .btn, .page-header button { display: none !important; }
+  .main-content { margin-left: 0 !important; }
+  .stat-card, .chart-card { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<div class="app-layout">
+  <div id="sidebar-placeholder"></div>
+
+  <div class="main-content">
+    <!-- Top Navbar -->
+    <div class="top-navbar">
+      <button class="hamburger" onclick="toggleSidebar()"><span></span><span></span><span></span></button>
+      <div class="navbar-title">🏠 Dashboard — DataUPIK POLISAS</div>
+      <div class="nav-user-info" id="nav-user-info"></div>
+    </div>
+
+    <!-- Search & Filter Bar -->
+    <div id="search-bar-placeholder"></div>
+
+    <!-- Page Content -->
+    <div class="page-content">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Ringkasan Statistik</div>
+          <div class="page-subtitle">Pencapaian Penyelidikan, Inovasi &amp; Komersial POLISAS</div>
+        </div>
+        <div class="d-flex gap-2" style="flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="printStatistik()">🖨️ Print</button>
+          <button class="btn btn-success btn-sm" id="btn-export" onclick="exportDashboard()">📥 Export Excel</button>
+        </div>
+      </div>
+
+      <!-- Stat Cards -->
+      <div class="stat-grid" id="stat-grid">
+        <div class="stat-card"><div class="spinner"></div></div>
+      </div>
+
+      <!-- Charts -->
+      <div class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-card-title">📊 Inovasi Mengikut Jabatan</div>
+          <canvas id="chart-inovasi-jabatan" height="200"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-title">📈 Penyelidikan Mengikut Tahun</div>
+          <canvas id="chart-penyelidikan-tahun" height="200"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-title">🌍 SDG Distribution (Inovasi)</div>
+          <canvas id="chart-sdg" height="200"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card-title">💰 Nilai Geran Mengikut Tahun (RM)</div>
+          <canvas id="chart-geran" height="200"></canvas>
+        </div>
+      </div>
+
+      <!-- Summary Table -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <div class="table-card-title">📋 Aktiviti Terbaru</div>
+          <div class="table-toolbar">
+            <select class="filter-select" id="dash-filter-year" onchange="loadRecentActivity()">
+              <option value="">Semua Tahun</option>
+            </select>
+            <select class="filter-select" id="dash-filter-jabatan" onchange="loadRecentActivity()">
+              <option value="">Semua Jabatan</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Modul</th>
+                <th>UID</th>
+                <th>Tajuk / Projek</th>
+                <th>Ketua</th>
+                <th>Jabatan</th>
+                <th>Tahun</th>
+              </tr>
+            </thead>
+            <tbody id="recent-tbody">
+              <tr><td colspan="6" class="loading-spinner"><div class="spinner"></div> Memuatkan...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <div class="pagination-info" id="recent-info"></div>
+          <div class="pagination-btns" id="recent-pagination"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+<script>
+const user = initPage('dashboard');
+if (user) {
+  document.getElementById('sidebar-placeholder').innerHTML = sidebarHTML('dashboard');
+  document.getElementById('search-bar-placeholder').innerHTML = searchBarHTML('semua');
+  populateYearFilter('filter-year');
+  populateJabatanFilter('filter-jabatan');
+  populateSdgFilter('filter-sdg');
+  populateYearFilter('dash-filter-year');
+  populateJabatanFilter('dash-filter-jabatan');
+  // Hide export for pensyarah
+  if (user.role !== 'admin') document.getElementById('btn-export').style.display = 'none';
+  loadStats();
+  loadRecentActivity();
+  loadCharts();
+}
+
+// ── Load stat cards ──
+async function loadStats() {
+  const tables = [
+    { key: 'penyelidikan', label: 'Penyelidikan', icon: '🔬', cls: 'blue' },
+    { key: 'inovasi',      label: 'Inovasi',       icon: '💡', cls: 'green' },
+    { key: 'ip',           label: 'IP Berdaftar',  icon: '🏛️', cls: 'purple' },
+    { key: 'geran',        label: 'Geran',          icon: '💰', cls: 'orange' },
+    { key: 'aset',         label: 'Aset Tak Ketara',icon: '🧾', cls: 'teal' },
+  ];
+  const year = document.getElementById('dash-filter-year')?.value || '';
+  const jabatan = document.getElementById('dash-filter-jabatan')?.value || '';
+
+  const counts = await Promise.all(tables.map(async t => {
+    let q = supabaseClient.from(TABLES[t.key]).select('*', { count: 'exact', head: true });
+    if (year) q = q.eq('Year', year);
+    if (jabatan) q = q.eq('Department', jabatan);
+    const { count } = await q;
+    return { ...t, count: count || 0 };
+  }));
+
+  document.getElementById('stat-grid').innerHTML = counts.map(c => `
+    <div class="stat-card ${c.cls}">
+      <div class="stat-icon">${c.icon}</div>
+      <div class="stat-value">${c.count}</div>
+      <div class="stat-label">${c.label}</div>
+    </div>`).join('');
+}
+
+// ── Load recent activity ──
+let recentPag;
+async function loadRecentActivity() {
+  const year = document.getElementById('dash-filter-year').value;
+  const jabatan = document.getElementById('dash-filter-jabatan').value;
+
+  const fetchModule = async (tableKey, modul, titleCol, leaderCol) => {
+    let q = supabaseClient.from(TABLES[tableKey]).select('*').order('Year', { ascending: false });
+    if (year) q = q.eq('Year', year);
+    if (jabatan) q = q.eq('Department', jabatan);
+    const { data } = await q.limit(50);
+    return (data || []).map(r => ({
+      Modul: modul,
+      UID: r['UID'] || r['id'] || '—',
+      Tajuk: r[titleCol] || '—',
+      Ketua: r[leaderCol] || '—',
+      Jabatan: r['Department'] || r['Lokasi'] || '—',
+      Tahun: r['Year'] || r['Tahun'] || '—',
+    }));
+  };
+
+  const all = (await Promise.all([
+    fetchModule('penyelidikan', '🔬 Penyelidikan', 'Title (Research & Innovation)', 'Researcher Leader'),
+    fetchModule('inovasi',      '💡 Inovasi',       'Title Development / Innovation', 'Team Leader'),
+    fetchModule('ip',           '🏛️ IP',            'Title Development / Innovation', 'Team Leader'),
+    fetchModule('geran',        '💰 Geran',          'Title Project',                 'Team Leader'),
+  ])).flat().sort((a,b) => (b.Tahun||0) - (a.Tahun||0));
+
+  if (!recentPag) {
+    recentPag = new Paginator({
+      data: all, pageSize: 15,
+      renderFn: renderRecentRows,
+      containerId: 'recent-tbody',
+      paginationId: 'recent-pagination',
+      infoId: 'recent-info',
+    });
+  } else {
+    recentPag.setData(all);
+  }
+}
+
+function renderRecentRows(rows) {
+  if (!rows.length) return '<tr><td colspan="6"><div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">Tiada rekod dijumpai</div></div></td></tr>';
+  return rows.map(r => `
+    <tr>
+      <td>${r.Modul}</td>
+      <td style="font-family:monospace;color:var(--muted)">${esc(r.UID)}</td>
+      <td title="${esc(r.Tajuk)}">${esc(r.Tajuk)}</td>
+      <td>${esc(r.Ketua)}</td>
+      <td>${esc(r.Jabatan)}</td>
+      <td>${esc(r.Tahun)}</td>
+    </tr>`).join('');
+}
+
+// ── Charts ──
+async function loadCharts() {
+  // 1. Inovasi by Jabatan
+  const { data: inData } = await supabaseClient.from(TABLES.inovasi).select('Department');
+  const jabCounts = {};
+  (inData||[]).forEach(r => { const j = r['Department']||'Lain'; jabCounts[j] = (jabCounts[j]||0)+1; });
+  new Chart(document.getElementById('chart-inovasi-jabatan'), {
+    type: 'bar',
+    data: {
+      labels: Object.keys(jabCounts),
+      datasets: [{ label: 'Inovasi', data: Object.values(jabCounts), backgroundColor: '#2a5298cc', borderRadius: 6 }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+  });
+
+  // 2. Penyelidikan by Year
+  const { data: pnData } = await supabaseClient.from(TABLES.penyelidikan).select('Year');
+  const yrCounts = {};
+  (pnData||[]).forEach(r => { const y = r['Year']||'?'; yrCounts[y] = (yrCounts[y]||0)+1; });
+  const sortedYrs = Object.keys(yrCounts).sort();
+  new Chart(document.getElementById('chart-penyelidikan-tahun'), {
+    type: 'line',
+    data: {
+      labels: sortedYrs,
+      datasets: [{ label: 'Penyelidikan', data: sortedYrs.map(y=>yrCounts[y]), borderColor: '#16a34a', backgroundColor: '#16a34a22', fill: true, tension: .3, pointRadius: 5 }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+
+  // 3. SDG Pie (Inovasi)
+  const { data: sdgData } = await supabaseClient.from(TABLES.inovasi).select('Sustainability Development Goals');
+  const sdgCounts = {};
+  (sdgData||[]).forEach(r => {
+    const s = r['Sustainability Development Goals'];
+    if (!s) return;
+    const key = s.split('.')[0].trim() + '.';
+    sdgCounts[key] = (sdgCounts[key]||0)+1;
+  });
+  const sdgKeys = Object.keys(sdgCounts).sort((a,b)=>parseInt(a)-parseInt(b));
+  const colors = ['#1d4ed8','#16a34a','#d97706','#dc2626','#7c3aed','#0284c7','#be185d','#065f46','#78350f','#1e40af','#064e3b','#92400e','#1e3a5f','#0c4a6e','#14532d','#44403c','#374151'];
+  new Chart(document.getElementById('chart-sdg'), {
+    type: 'doughnut',
+    data: {
+      labels: sdgKeys,
+      datasets: [{ data: sdgKeys.map(k=>sdgCounts[k]), backgroundColor: colors }]
+    },
+    options: { plugins: { legend: { position: 'right', labels: { font: { size: 10 }, boxWidth: 12 } } } }
+  });
+
+  // 4. Geran Value by Year
+  const { data: grData } = await supabaseClient.from(TABLES.geran).select('Year, Value');
+  const grYears = {};
+  (grData||[]).forEach(r => {
+    const y = r['Year']||'?';
+    const v = parseFloat(String(r['Value']||'0').replace(/[^0-9.]/g,''))||0;
+    grYears[y] = (grYears[y]||0)+v;
+  });
+  const grYrSorted = Object.keys(grYears).sort();
+  new Chart(document.getElementById('chart-geran'), {
+    type: 'bar',
+    data: {
+      labels: grYrSorted,
+      datasets: [{ label: 'RM', data: grYrSorted.map(y=>grYears[y]), backgroundColor: '#d97706cc', borderRadius: 6 }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+}
+
+// ── Export all dashboard data ──
+async function exportDashboard() {
+  if (user.role !== 'admin') return;
+  showToast('Menyediakan Excel…', 'info');
+  const wb = window.XLSX ? XLSX.utils.book_new() : null;
+  if (!wb) { showToast('SheetJS belum dimuatkan.', 'error'); return; }
+
+  const sheets = [
+    { key: 'penyelidikan', name: 'Penyelidikan' },
+    { key: 'inovasi',      name: 'Inovasi' },
+    { key: 'ip',           name: 'IP & Komersial' },
+    { key: 'geran',        name: 'Geran' },
+    { key: 'aset',         name: 'Aset Tak Ketara' },
+  ];
+  for (const s of sheets) {
+    const { data } = await supabaseClient.from(TABLES[s.key]).select('*');
+    if (data && data.length) {
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, s.name);
+    }
+  }
+  XLSX.writeFile(wb, 'DataUPIK_POLISAS_' + new Date().toISOString().slice(0,10) + '.xlsx');
+  showToast('Excel berjaya dieksport!', 'success');
+}
+</script>
+</body>
+</html>
